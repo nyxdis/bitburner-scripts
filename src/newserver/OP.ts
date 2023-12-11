@@ -13,7 +13,7 @@ const serverWeakenAmount = 0.05 // Amount by which server's security decreases w
 /**
  * OP main
  * 
- * @param {NS} ns NetScript
+ * @param ns NetScript
  */
 export async function main(ns: NS): Promise<void> {
 
@@ -68,20 +68,12 @@ export async function main(ns: NS): Promise<void> {
         if (hackDifficulty - minDifficulty > serverWeakenAmount) {
             await primeOptimal(ns, payloadTarget[0], 'home')
         }
-        // runtime for weaken/hack/grow
-        const wTime = payloadTarget[5]
-        const hTime = wTime / 4
-        const gTime = hTime * 16 / 5
 
         let ramRequired = payloadTarget[3]
         let shiftCount = Math.floor(ramUsable / ramRequired) // number of cycles for this run
         const threadMult = Math.max(Math.floor(shiftCount / 200), 1) // reduce number of processes, increase multithreading
-        //const threadMult = 1
         ramRequired *= threadMult
         shiftCount = Math.floor(shiftCount / threadMult)
-
-
-        const sleepTime = Math.max(400, wTime / shiftCount) // time between cycle executes
 
         // number of threads
         const hThreads = payloadTarget[1] * threadMult
@@ -96,17 +88,28 @@ export async function main(ns: NS): Promise<void> {
             ns.exit()
         }
 
-        const hOffset = sleepTime / 2
-        const gOffset = hOffset / 2
-
-        // time between actions
-        const hSleep = wTime - hTime - hOffset // Getting time for hack, shaving off more to make sure it beats both weaken and growth
-        const gSleep = wTime - gTime - gOffset // Getting the time to have the Growth execution sleep, then shaving some off to beat the weaken execution
-
-        await log(ns, payloadTarget, host, shiftCount, sleepTime, run)
+        await log(ns, payloadTarget, host, shiftCount, NaN, run)
 
         for (let i = 0; i < shiftCount; i++) {
+            // runtime for weaken/hack/grow
+            const wTime = ns.getWeakenTime(payloadTarget[0])
+            const hTime = wTime / 4
+            const gTime = hTime * 16 / 5
+
+            const sleepTime = Math.max(1000, wTime / shiftCount) // time between cycle executes
+
+            const hOffset = sleepTime / 2
+            const gOffset = hOffset / 2
+
+            // time between actions
+            const hSleep = wTime - hTime - hOffset // Getting time for hack, shaving off more to make sure it beats both weaken and growth
+            const gSleep = wTime - gTime - gOffset // Getting the time to have the Growth execution sleep, then shaving some off to beat the weaken execution
+
             if (ramRequired < ns.getServerMaxRam(host) - ns.getServerUsedRam(host)) {
+                const actWTime = ns.getWeakenTime(payloadTarget[0])
+                if (Math.abs(wTime - actWTime) > gOffset) {
+                    ns.tprintf('Warning: wTime diff (wTime: %.3f, actWTime: %.3f) bigger than gOffset (%.3f) (diff: %.3f)', wTime, actWTime, gOffset, Math.abs(wTime - actWTime))
+                }
                 const hRes = ns.exec('/newserver/hack.js', host, hThreads, payloadTarget[0], hSleep, i) // i is a fake argument to create a separate instance of the script
                 const gRes = ns.exec('/newserver/grow.js', host, gThreads, payloadTarget[0], gSleep, i) // ditto i
                 const wRes = ns.exec('/newserver/weaken.js', host, wThreads, payloadTarget[0], 0, i) // ditto i
@@ -124,8 +127,9 @@ export async function main(ns: NS): Promise<void> {
         if (proceed) {
             hServers = await findHackable(ns, allServers);
             [payloadOptimal, payloadn00dles] = await findOptimal(ns, hServers)
-            if (lastOptimalServer != payloadOptimal[0]) {
-                payloadTarget = payloadOptimal
+            payloadTarget = payloadOptimal
+            if (lastOptimalServer !== payloadOptimal[0]) {
+                const wTime = ns.getWeakenTime(payloadTarget[0])
                 await ns.sleep(host === 'home' ? wTime : 0) // ensuring all cycles including the last one fired are completed before priming
                 await primeOptimal(ns, payloadTarget[0], 'home', host === 'home' ? 0 : wTime)
                 run = 0
@@ -174,7 +178,7 @@ async function primeOptimal(ns: NS, _tServer: string, _hServer: string, minSleep
     const ramHome = hServer.maxRam - hServer.ramUsed
     const ramHost = host.maxRam - host.ramUsed
     if (ramHome < scriptRam && ramHost < scriptRam) {
-        ns.tprintf("Error: cannot prime host '%s', not enough RAM available (%d GB required, %d GB usable on home, %d GB usable on host)", tServer.hostname, scriptRam, ramHome, ramHost)
+        ns.tprintf("Error: cannot prime host '%s', not enough RAM available (%s required, %s usable on home, %s usable on host)", tServer.hostname, ns.formatRam(scriptRam), ns.formatRam(ramHome), ns.formatRam(ramHost))
         ns.exit()
     }
     const primer = ramHome > scriptRam ? hServer : host
@@ -234,8 +238,11 @@ async function findOptimal(ns: NS, hackableServersList: string[]): Promise<Paylo
         const hh = ssGrow / ssHack / Math.log(sPercentageGrow) * wl //   Eqtn 23.4.2: h = ssGrow / ssHack / log(sPercentageGrow) * W(x) 
         const gg = Math.ceil((Math.log(hh) + b) / Math.log(sPercentageGrow)) //     Eqtn 3.4: g = (log(h) + log(1 - sPercentageHack)) / log(sPercentageGrow)
 
-        if (gg != 12) {
-            ns.tprintf('gg is not 12')
+        if (gg !== 12) {
+            ns.tprintf('%s: gg is not 12, but %d', currServer, gg)
+        }
+        if (Math.floor(hh) !== 1) {
+            ns.tprintf('%s: hh is not 1, but %d', currServer, Math.floor(hh))
         }
 
         const sMMc = sMM * sPercentageHack * Math.floor(hh) * sHackChance // Server Max Money hacked per cycle.
@@ -295,10 +302,10 @@ async function wLambert(ns: NS, z: number): Promise<number> {
     while (Math.abs(error) > 0.01 && lambertHope) {
         w1 = w - (w - z * Math.exp(-w)) / (w + 1) // https://en.wikipedia.org/wiki/Lambert_W_function#Numerical_evaluation (Newton's method with the numerator and denominator multiplied by e^-wj for simplification)
         error = (w1 - w) / w1
-        if (i % 100 === 0 && i != 0) {
+        if (i % 100 === 0 && i !== 0) {
             lambertHope = await ns.prompt("Could not converge on the Lambert function after 10 x 100 loops. Initial values: z:" + z + " | w0:" + w0 + " --> Current value: wi:" + w1 + " | error: " + error + ". Continue for another 10 x 100 loops?")
             w = w1
-            //} else if (i % 100 === 0 && i != 0) {
+            //} else if (i % 100 === 0 && i !== 0) {
             //    w = w1 + (w0 - w1) * 2 * (Math.min(1, Math.abs(error)) * (Math.random() - 0.5))
         } else {
             w = w1

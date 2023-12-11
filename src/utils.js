@@ -1,19 +1,19 @@
 export function root(ns, target) {
     if (ns.fileExists('BruteSSH.exe', 'home')) {
-        ns.brutessh(server);
+        ns.brutessh(target)
     }
     if (ns.fileExists('FTPCrack.exe', 'home')) {
-        ns.ftpcrack(server);
+        ns.ftpcrack(target)
     }
     if (ns.fileExists('relaySMTP.exe', 'home')) {
-        ns.relaysmtp(server);
+        ns.relaysmtp(target)
     }
     if (ns.fileExists('HTTPWorm.exe', 'home')) {
-        ns.httpworm(server);
+        ns.httpworm(target)
     }
     if (ns.fileExists('SQLInject.exe', 'home')) {
-        ns.sqlinject(server);
+        ns.sqlinject(target)
     }
-    ns.nuke(server);
+    ns.nuke(target)
 
 }

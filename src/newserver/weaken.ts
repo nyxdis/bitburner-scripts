@@ -5,6 +5,6 @@ export async function main(ns: NS): Promise<void> {
     const sleeptime = ns.args[1]
     if (typeof server === "string" && typeof sleeptime === "number") {
         await ns.sleep(sleeptime)
-        await ns.hack(server)
+        await ns.weaken(server)
     }
 }

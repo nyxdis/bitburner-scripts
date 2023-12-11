@@ -1,8 +1,9 @@
-/**
- * 
- * @param {NS} ns 
- */
-export async function main(ns) {
+import { NS } from '@ns'
+
+export async function main(ns: NS): Promise<void> {
+    if (ns.args.length !== 1 || typeof ns.args[0] !== 'string') {
+        ns.exit()
+    }
     const target = ns.args[0]
     const weakenRam = ns.getScriptRam('/newserver/weaken.js')
     const growRam = ns.getScriptRam('/newserver/grow.js') * 12
@@ -13,14 +14,7 @@ export async function main(ns) {
     }
 }
 
-/**
- * 
- * @param {NS} ns 
- * @param {string} target 
- * @param {string} _host 
- * @param {number} totalRam 
- */
-function prime(ns, target, _host, totalRam) {
+function prime(ns: NS, target: string, _host: string, totalRam: number) {
     const host = ns.getServer(_host)
     const freeRam = host.maxRam - host.ramUsed
     const threadMult = Math.floor(freeRam / totalRam)
